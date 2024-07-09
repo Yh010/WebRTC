@@ -7,24 +7,45 @@ function Sender() {
     socket.onopen = () => {
       socket.send(JSON.stringify({ type: "sender" }));
     };
+    setsocket(socket);
   }, []);
 
   async function sendVideo() {
     if (!socket) return;
     const pc = new RTCPeerConnection();
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    socket?.send(
-      JSON.stringify({ type: "createOffer", sdp: pc.setLocalDescription })
-    );
+    pc.onnegotiationneeded = async () => {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      socket?.send(
+        JSON.stringify({ type: "createOffer", sdp: pc.setLocalDescription })
+      );
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket?.send(
+          JSON.stringify({ type: "iceCandidate", candidate: event.candidate })
+        );
+      }
+    };
 
     socket.onmessage = async (event) => {
       const message = JSON.parse(event.data);
 
       if (message.type === "createAnswer") {
         pc.setRemoteDescription(message.sdp);
+      } else if (message.type === "iceCandidate") {
+        pc.addIceCandidate(message.candidate);
       }
     };
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: true,
+    });
+    pc.addTrack(stream.getVideoTracks()[0]);
+    // pc.addTrack(stream.getAudioTracks()[0]);
   }
 
   return (
