@@ -1,25 +1,29 @@
 import { useEffect, useState } from "react";
 
-function Sender() {
+export default function Sender() {
   const [socket, setsocket] = useState<WebSocket | null>(null);
+
   useEffect(() => {
     const socket = new WebSocket("ws://localhost:8080/");
     socket.onopen = () => {
       socket.send(JSON.stringify({ type: "sender" }));
     };
     setsocket(socket);
+
+    return () => {
+      socket.close();
+    };
   }, []);
 
   async function sendVideo() {
     if (!socket) return;
+
     const pc = new RTCPeerConnection();
+
     pc.onnegotiationneeded = async () => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
-      socket?.send(
-        JSON.stringify({ type: "createOffer", sdp: pc.setLocalDescription })
-      );
+      socket?.send(JSON.stringify({ type: "createOffer", sdp: offer }));
     };
 
     pc.onicecandidate = (event) => {
@@ -34,9 +38,9 @@ function Sender() {
       const message = JSON.parse(event.data);
 
       if (message.type === "createAnswer") {
-        pc.setRemoteDescription(message.sdp);
+        await pc.setRemoteDescription(new RTCSessionDescription(message.sdp));
       } else if (message.type === "iceCandidate") {
-        pc.addIceCandidate(message.candidate);
+        await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
       }
     };
 
@@ -44,16 +48,16 @@ function Sender() {
       video: true,
       audio: true,
     });
-    pc.addTrack(stream.getVideoTracks()[0]);
-    // pc.addTrack(stream.getAudioTracks()[0]);
+
+    stream.getTracks().forEach((track) => {
+      pc.addTrack(track, stream);
+    });
   }
 
   return (
     <div>
       Sender
-      <button onClick={sendVideo}>start video</button>
+      <button onClick={sendVideo}>Start Video</button>
     </div>
   );
 }
-
-export default Sender;
